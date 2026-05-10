@@ -7,9 +7,24 @@
 
 import Foundation
 import SwiftUI
+import MapKit
 
 struct ExploreView: View {
+    @State private var locationManager = LocationManager()
+    @State private var position: MapCameraPosition = .userLocation(fallback: .automatic)
     var body: some View {
-        Text("Explore")
+        Map(position: $position) {
+            UserAnnotation()
+        }
+        .mapControls {
+            MapUserLocationButton()
+            MapCompass()
+        }
+        
     }
 }
+
+//#Preview {
+////    ExploreView()
+//    NavigationTab()
+//}

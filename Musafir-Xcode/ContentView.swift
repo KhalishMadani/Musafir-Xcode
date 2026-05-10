@@ -12,7 +12,7 @@ struct ContentView: View {
         VStack {
             NavigationTab()
         }
-        .padding()
+//        .padding()
     }
 }
 

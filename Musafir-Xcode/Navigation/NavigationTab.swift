@@ -12,13 +12,30 @@ struct NavigationTab: View {
         Tab("Explore", systemImage: "map") {
             NavigationStack {
                 ExploreView()
+                    .navigationBarTitleDisplayMode(.inline)
+                    .toolbar {
+                        ToolbarItem(placement: .title) {
+                            Text("MUSAFIR")
+                                .font(.system(size: 20, weight: .bold))
+                                .foregroundStyle(Color.purple)
+                        }
+                    }
             }
         }
         Tab("Configure", systemImage: "gearshape") {
             NavigationStack {
                 ConfigureView()
-                    .tint(nil)
-                    .navigationTitle("MUSAFIR")
+                    .tint(Color.purple)
+                    .navigationBarTitleDisplayMode(.inline)
+//                    .toolbarBackground(Color.purple, for: .navigationBar)
+                    .toolbarBackgroundVisibility(.visible, for: .navigationBar)
+                    .toolbar {
+                        ToolbarItem(placement: .title) {
+                            Text("MUSAFIR")
+                                .font(.system(size: 20, weight: .bold))
+                                .foregroundStyle(Color.purple)
+                        }
+                    }
             }
         }
     }
