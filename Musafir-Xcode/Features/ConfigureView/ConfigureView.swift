@@ -42,7 +42,7 @@ struct ConfigureView: View {
     }
 }
 
-#Preview {
-//    ConfigureView()
-        NavigationTab()
-}
+//#Preview {
+////    ConfigureView()
+//        NavigationTab()
+//}

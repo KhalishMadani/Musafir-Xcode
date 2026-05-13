@@ -11,7 +11,7 @@ struct NavigationTab: View {
     var body: some View {            TabView{
         Tab("Explore", systemImage: "map") {
             NavigationStack {
-                ExploreView()
+                MapView()
                     .navigationBarTitleDisplayMode(.inline)
                     .toolbar {
                         ToolbarItem(placement: .title) {
@@ -20,6 +20,7 @@ struct NavigationTab: View {
                                 .foregroundStyle(Color.purple)
                         }
                     }
+                    .tint(Color.blue)
             }
         }
         Tab("Configure", systemImage: "gearshape") {
