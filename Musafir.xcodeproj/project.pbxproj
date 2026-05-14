@@ -7,16 +7,16 @@
 	objects = {
 
 /* Begin PBXFileReference section */
-		0A0D8AC42FB02D85000ED817 /* Musafir-Xcode.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Musafir-Xcode.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		0A0D8AC42FB02D85000ED817 /* Musafir.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Musafir.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
-		0A17AD7C2FB0CE5E0031A995 /* Exceptions for "Musafir-Xcode" folder in "Musafir-Xcode" target */ = {
+		0A17AD7C2FB0CE5E0031A995 /* Exceptions for "Musafir-Xcode" folder in "Musafir" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				Info.plist,
 			);
-			target = 0A0D8AC32FB02D85000ED817 /* Musafir-Xcode */;
+			target = 0A0D8AC32FB02D85000ED817 /* Musafir */;
 		};
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
@@ -24,7 +24,7 @@
 		0A0D8AC62FB02D85000ED817 /* Musafir-Xcode */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			exceptions = (
-				0A17AD7C2FB0CE5E0031A995 /* Exceptions for "Musafir-Xcode" folder in "Musafir-Xcode" target */,
+				0A17AD7C2FB0CE5E0031A995 /* Exceptions for "Musafir-Xcode" folder in "Musafir" target */,
 			);
 			path = "Musafir-Xcode";
 			sourceTree = "<group>";
@@ -53,7 +53,7 @@
 		0A0D8AC52FB02D85000ED817 /* Products */ = {
 			isa = PBXGroup;
 			children = (
-				0A0D8AC42FB02D85000ED817 /* Musafir-Xcode.app */,
+				0A0D8AC42FB02D85000ED817 /* Musafir.app */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -61,9 +61,9 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
-		0A0D8AC32FB02D85000ED817 /* Musafir-Xcode */ = {
+		0A0D8AC32FB02D85000ED817 /* Musafir */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = 0A0D8ACF2FB02D85000ED817 /* Build configuration list for PBXNativeTarget "Musafir-Xcode" */;
+			buildConfigurationList = 0A0D8ACF2FB02D85000ED817 /* Build configuration list for PBXNativeTarget "Musafir" */;
 			buildPhases = (
 				0A0D8AC02FB02D85000ED817 /* Sources */,
 				0A0D8AC12FB02D85000ED817 /* Frameworks */,
@@ -76,11 +76,11 @@
 			fileSystemSynchronizedGroups = (
 				0A0D8AC62FB02D85000ED817 /* Musafir-Xcode */,
 			);
-			name = "Musafir-Xcode";
+			name = Musafir;
 			packageProductDependencies = (
 			);
 			productName = "Musafir-Xcode";
-			productReference = 0A0D8AC42FB02D85000ED817 /* Musafir-Xcode.app */;
+			productReference = 0A0D8AC42FB02D85000ED817 /* Musafir.app */;
 			productType = "com.apple.product-type.application";
 		};
 /* End PBXNativeTarget section */
@@ -98,7 +98,7 @@
 					};
 				};
 			};
-			buildConfigurationList = 0A0D8ABF2FB02D85000ED817 /* Build configuration list for PBXProject "Musafir-Xcode" */;
+			buildConfigurationList = 0A0D8ABF2FB02D85000ED817 /* Build configuration list for PBXProject "Musafir" */;
 			developmentRegion = en;
 			hasScannedForEncodings = 0;
 			knownRegions = (
@@ -112,7 +112,7 @@
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
-				0A0D8AC32FB02D85000ED817 /* Musafir-Xcode */,
+				0A0D8AC32FB02D85000ED817 /* Musafir */,
 			);
 		};
 /* End PBXProject section */
@@ -332,7 +332,7 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
-		0A0D8ABF2FB02D85000ED817 /* Build configuration list for PBXProject "Musafir-Xcode" */ = {
+		0A0D8ABF2FB02D85000ED817 /* Build configuration list for PBXProject "Musafir" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				0A0D8ACD2FB02D85000ED817 /* Debug */,
@@ -341,7 +341,7 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		0A0D8ACF2FB02D85000ED817 /* Build configuration list for PBXNativeTarget "Musafir-Xcode" */ = {
+		0A0D8ACF2FB02D85000ED817 /* Build configuration list for PBXNativeTarget "Musafir" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				0A0D8AD02FB02D85000ED817 /* Debug */,
