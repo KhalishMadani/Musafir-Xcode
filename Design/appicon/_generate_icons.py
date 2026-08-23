@@ -129,40 +129,93 @@ def icon_pin_trail():
 
 # ------------------------------------------------------------------ concept 3
 
-def icon_pin_compass():
-    """An outlined pin holding a compass needle — direction, not just location."""
-    defs = [gradient("bg", "#CF74EE", "#4E2196"), HIGHLIGHT]
-    body = [backdrop()]
-
+def compass_mark(outline=WHITE, needle=WHITE, ghost="#E9D3F7", ghost_opacity=0.75,
+                 interior=None, shadow="#3B1560", shadow_opacity=0.16):
+    """The pin-and-needle mark, recoloured per appearance."""
     scale = 4.4
     tip_x, tip_y = 512, 800
     transform = f"translate({tip_x} {tip_y}) scale({scale}) translate(-50 -140)"
+    body = []
 
-    body.append(
-        f'<path d="{PIN}" fill="#3B1560" opacity="0.16" '
-        f'transform="translate({tip_x + 10} {tip_y + 12}) scale({scale}) translate(-50 -140)"/>'
-    )
-    body.append(f'<path d="{PIN}" fill="none" stroke="{WHITE}" stroke-width="13" transform="{transform}"/>')
+    if shadow:
+        body.append(
+            f'<path d="{PIN}" fill="{shadow}" opacity="{shadow_opacity}" '
+            f'transform="translate({tip_x + 10} {tip_y + 12}) scale({scale}) translate(-50 -140)"/>'
+        )
+    if interior:
+        # Dark and tinted variants sit on a system-drawn backdrop, so the pin
+        # needs its own faint body or the shape reads as a bare outline.
+        body.append(f'<path d="{PIN}" fill="{interior}" transform="{transform}"/>')
+
+    body.append(f'<path d="{PIN}" fill="none" stroke="{outline}" stroke-width="13" transform="{transform}"/>')
 
     # Needle inside the pin head: filled half points north-east, ghost half south-west.
     hx, hy = 512, tip_y - 90 * scale
     n, w = 118, 26
+    body.append(f'<path d="M{hx + n} {hy - n} {hx + w} {hy + w} {hx - w} {hy - w}Z" fill="{needle}"/>')
     body.append(
-        f'<path d="M{hx + n} {hy - n} {hx + w} {hy + w} {hx - w} {hy - w}Z" fill="{WHITE}"/>'
+        f'<path d="M{hx - n} {hy + n} {hx + w} {hy + w} {hx - w} {hy - w}Z" '
+        f'fill="{ghost}" opacity="{ghost_opacity}"/>'
     )
-    body.append(
-        f'<path d="M{hx - n} {hy + n} {hx + w} {hy + w} {hx - w} {hy - w}Z" fill="#E9D3F7" opacity="0.75"/>'
-    )
-    body.append(f'<circle cx="{hx}" cy="{hy}" r="20" fill="{WHITE}"/>')
+    body.append(f'<circle cx="{hx}" cy="{hy}" r="20" fill="{needle}"/>')
+    return body
 
+
+def icon_pin_compass():
+    """Any Appearance: full-bleed purple gradient behind the mark."""
+    defs = [gradient("bg", "#CF74EE", "#4E2196"), HIGHLIGHT]
+    body = [backdrop()] + compass_mark()
     return svg("\n".join(body), "".join(defs))
+
+
+def icon_pin_compass_dark():
+    """Dark appearance: transparent background — iOS draws its own dark backdrop.
+
+    Apple's guidance is to hand over only the artwork for the dark variant, and
+    to pull the brightness back a little so it doesn't glare on a dark home
+    screen. The pin gets a faint body so it doesn't read as a bare outline.
+    """
+    body = compass_mark(
+        outline="#F2E9FA",
+        needle="#F2E9FA",
+        ghost="#B98FD8",
+        ghost_opacity=0.9,
+        interior="#FFFFFF",
+        shadow=None,
+    )
+    # Interior wash: a low-opacity white body under the outline.
+    body[0] = body[0].replace('fill="#FFFFFF"', 'fill="#FFFFFF" opacity="0.10"')
+    return svg("\n".join(body))
+
+
+def icon_pin_compass_tinted():
+    """Tinted appearance: greyscale artwork on transparency.
+
+    iOS maps luminance onto the user's chosen tint, so the variant carries no
+    colour of its own — only the light/dark relationships of the mark.
+    """
+    body = compass_mark(
+        outline="#FFFFFF",
+        needle="#FFFFFF",
+        ghost="#9A9A9A",
+        ghost_opacity=1.0,
+        interior="#FFFFFF",
+        shadow=None,
+    )
+    body[0] = body[0].replace('fill="#FFFFFF"', 'fill="#FFFFFF" opacity="0.14"')
+    return svg("\n".join(body))
 
 
 CONCEPTS = {
     "icon-1-twin-pins": icon_twin_pins,
     "icon-2-pin-trail": icon_pin_trail,
     "icon-3-pin-compass": icon_pin_compass,
+    "icon-3-pin-compass-dark": icon_pin_compass_dark,
+    "icon-3-pin-compass-tinted": icon_pin_compass_tinted,
 }
+
+# Only the three concept icons belong on the comparison sheet.
+SHEET = ["icon-1-twin-pins", "icon-2-pin-trail", "icon-3-pin-compass"]
 
 
 def main():
@@ -172,29 +225,58 @@ def main():
             f.write(fn())
         print(name + ".svg")
 
-    # Contact sheet so all three can be compared at a glance.
-    tiles = []
-    for i, name in enumerate(CONCEPTS):
-        x = 40 + i * 240
-        tiles.append(
-            f'<g transform="translate({x} 76) scale(0.205)">'
-            f'<clipPath id="c{i}"><rect width="{S}" height="{S}" rx="230"/></clipPath>'
-            f'<g clip-path="url(#c{i})">' + CONCEPTS[name]().split("\n", 1)[1].rsplit("</svg>", 1)[0] + "</g>"
+    def tile(i, name, x, y, backdrop_fill, label):
+        """One masked icon preview with a caption."""
+        art = CONCEPTS[name]().split("\n", 1)[1].rsplit("</svg>", 1)[0]
+        return (
+            f'<clipPath id="c{i}"><rect x="{x}" y="{y}" width="210" height="210" rx="47"/></clipPath>'
+            f'<g clip-path="url(#c{i})">'
+            f'<rect x="{x}" y="{y}" width="210" height="210" fill="{backdrop_fill}"/>'
+            f'<g transform="translate({x} {y}) scale(0.205)">{art}</g>'
             f"</g>"
-            f'<text x="{x + 105} " y="330" font-family="SF Pro, -apple-system, sans-serif" font-size="18" '
-            f'fill="#3C3C43" text-anchor="middle">{name}</text>'
+            f'<text x="{x + 105}" y="{y + 254}" font-family="SF Pro, -apple-system, sans-serif" '
+            f'font-size="18" fill="#3C3C43" text-anchor="middle">{label}</text>'
         )
+
+    # Concept sheet: the three directions side by side.
+    tiles = [tile(i, name, 40 + i * 240, 76, "none", name) for i, name in enumerate(SHEET)]
     sheet = (
-        f'<svg width="780" height="380" viewBox="0 0 780 380" xmlns="http://www.w3.org/2000/svg">'
-        f'<rect width="780" height="380" fill="#FFFFFF"/>'
-        f'<text x="40" y="46" font-family="SF Pro, -apple-system, sans-serif" font-size="22" '
-        f'font-weight="700" fill="#000000">Musafir — app icon concepts</text>'
+        '<svg width="780" height="380" viewBox="0 0 780 380" xmlns="http://www.w3.org/2000/svg">'
+        '<rect width="780" height="380" fill="#FFFFFF"/>'
+        '<text x="40" y="46" font-family="SF Pro, -apple-system, sans-serif" font-size="22" '
+        'font-weight="700" fill="#000000">Musafir — app icon concepts</text>'
         + "".join(tiles)
         + "</svg>\n"
     )
     with open(os.path.join(BASE, "concepts-sheet.svg"), "w") as f:
         f.write(sheet)
     print("concepts-sheet.svg")
+
+    # Appearance sheet: how the chosen concept renders in each iOS slot. The
+    # dark and tinted backdrops here only stand in for what the system draws.
+    variants = [
+        ("icon-3-pin-compass", "#FFFFFF", "Any Appearance"),
+        ("icon-3-pin-compass-dark", "url(#darkbg)", "Dark"),
+        ("icon-3-pin-compass-tinted", "url(#tintbg)", "Tinted"),
+    ]
+    vtiles = [tile(10 + i, n, 40 + i * 240, 76, bg, lbl) for i, (n, bg, lbl) in enumerate(variants)]
+    appearance = (
+        '<svg width="780" height="380" viewBox="0 0 780 380" xmlns="http://www.w3.org/2000/svg">'
+        "<defs>"
+        '<linearGradient id="darkbg" x1="0" y1="0" x2="0" y2="1">'
+        '<stop offset="0" stop-color="#3A3A3C"/><stop offset="1" stop-color="#1C1C1E"/></linearGradient>'
+        '<linearGradient id="tintbg" x1="0" y1="0" x2="0" y2="1">'
+        '<stop offset="0" stop-color="#7E6BD8"/><stop offset="1" stop-color="#2C2550"/></linearGradient>'
+        "</defs>"
+        '<rect width="780" height="380" fill="#FFFFFF"/>'
+        '<text x="40" y="46" font-family="SF Pro, -apple-system, sans-serif" font-size="22" '
+        'font-weight="700" fill="#000000">Pin compass — iOS appearance variants</text>'
+        + "".join(vtiles)
+        + "</svg>\n"
+    )
+    with open(os.path.join(BASE, "appearance-sheet.svg"), "w") as f:
+        f.write(appearance)
+    print("appearance-sheet.svg")
 
 
 if __name__ == "__main__":

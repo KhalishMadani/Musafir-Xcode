@@ -1,25 +1,39 @@
-# Musafir app icon concepts
+# Musafir app icon
 
-Three directions at 1024×1024, all keeping the purple + map-pin identity of the
-current icon.
+Chosen mark: **pin compass** — an outlined map pin holding a compass needle.
+Direction, not just location.
 
-| File | Idea |
-|---|---|
-| `icon-1-twin-pins` | Two pins with a small scout pin above — closest to today's icon, "many places, one traveller" |
-| `icon-2-pin-trail` | One pin with a route of stepping stones approaching it — *musafir* = traveller |
-| `icon-3-pin-compass` | Outlined pin holding a compass needle — direction, not just location |
+## Files
 
-`concepts-sheet.svg` shows all three side by side with the iOS corner mask applied.
+| File | Slot | Format |
+|---|---|---|
+| `icon-3-pin-compass.png` | Any Appearance | 1024×1024 RGB, **no alpha** |
+| `icon-3-pin-compass-dark.png` | Dark | 1024×1024 RGBA, transparent background |
+| `icon-3-pin-compass-tinted.png` | Tinted | 1024×1024 RGBA, greyscale on transparency |
+| `appearance-sheet.svg` | preview of all three slots | — |
 
-Each concept ships as both `.svg` (editable, for Figma) and `.png`
-(1024×1024, no alpha, ready for Xcode).
+Earlier explorations kept for reference: `icon-1-twin-pins`, `icon-2-pin-trail`,
+compared side by side in `concepts-sheet.svg`.
 
-## Use one in the app
+Every icon also ships as `.svg` — editable, and what to hand to Figma.
 
-Drop the chosen PNG into `Musafir-Xcode/Assets.xcassets/AppIcon.appiconset/` and
-point `Contents.json` at it, or drag it onto the 1024pt "All" well in Xcode's
-asset catalog. Delete the current `Screenshot 2026-05-14 at 14.18.59.png` once
-the replacement is in.
+## Why the variants differ
+
+- **Any Appearance** carries its own purple gradient and must be opaque; App
+  Store Connect rejects a primary icon with an alpha channel (ITMS-90717).
+- **Dark** is artwork only on transparency — iOS draws the dark backdrop. The
+  mark is pulled back from pure white to `#F2E9FA` so it doesn't glare, and the
+  pin body carries a 10% white wash so it doesn't read as a bare outline.
+- **Tinted** is greyscale on transparency. iOS maps luminance onto the user's
+  chosen tint, so the file holds no colour of its own — only light/dark
+  relationships.
+
+## Install in Xcode
+
+1. Select `AppIcon` in `Assets.xcassets`.
+2. Attributes inspector → **Appearances: Any, Dark, Tinted**.
+3. Drag each PNG into its matching well.
+4. Delete the old `Screenshot 2026-05-14 at 14.18.59.png`.
 
 ## Regenerate
 
@@ -27,24 +41,16 @@ the replacement is in.
 python3 Design/appicon/_generate_icons.py
 ```
 
-Then re-render the PNGs (macOS QuickLook, since the machine has no
-rsvg/ImageMagick/Pillow):
-
 ```bash
-cd Design/appicon && for f in icon-*.svg; do qlmanage -t -s 1024 -o . "$f" >/dev/null 2>&1; done && for f in *.svg.png; do sips -s format png -z 1024 1024 "$f" --out "${f%.svg.png}.png" >/dev/null && rm "$f"; done
+python3 Design/appicon/_rasterize.py
 ```
 
-```bash
-python3 Design/appicon/_flatten_alpha.py
-```
-
-`_flatten_alpha.py` drops the alpha channel QuickLook adds — App Store Connect
-rejects icons that carry one (ITMS-90717). The art is fully opaque, so nothing
-is composited away.
+`_rasterize.py` renders through macOS QuickLook, since this machine has no
+rsvg-convert, ImageMagick, or Pillow. QuickLook always flattens onto white, so
+the transparent variants are rendered twice — once over white, once over black —
+and the alpha is solved back out of the pair.
 
 ## Notes
 
-- Full-bleed squares with square corners; iOS applies the rounded mask itself.
-- Gradients run light violet → deep violet; the app's `Color.purple` accent
-  (`#AF52DE`) sits inside that range, so the icon and UI stay in family.
-- No text in the icon, per Apple's guidance — the mark has to read at 40pt.
+- Full-bleed squares with square corners; iOS applies the rounded mask.
+- No text in the mark — it has to read at 40pt.
