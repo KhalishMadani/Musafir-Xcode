@@ -8,14 +8,13 @@
 import SwiftUI
 
 struct ConfigureView: View {
-    let options = ["Islam", "Kristen", "Katolik", "Hindu", "Budha"]
-    @State private var selectedOption: String = "Islam"
+    @AppStorage(Religion.storageKey) private var selectedOption: Religion = .islam
     
     var body: some View {
         VStack {
             Picker("Choose Religion", selection: $selectedOption) {
-                ForEach(options, id: \.self) { option in
-                    Text(option)
+                ForEach(Religion.allCases) { option in
+                    Text(option.rawValue)
                         .font(.system(size: 30,weight: .bold))
                         .tag(option)
                 }
