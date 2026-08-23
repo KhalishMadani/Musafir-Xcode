@@ -8,62 +8,285 @@
 import SwiftUI
 import MapKit
 
-
 struct MapView: View {
-    let manager = CLLocationManager()
-    @State private var cameraPosition: MapCameraPosition = .userLocation(fallback: .automatic)
-    @State private var locationMark: [MKMapItem] = []
-    
-    var body: some View {
-        Map(position: $cameraPosition) {
-            UserAnnotation()
-            ForEach(locationMark, id: \.self) { item in
-                Marker(
-                    item.name ?? "Coffee",
-                    systemImage: "pin.circle",
-                    coordinate: item.location.coordinate
-                )
-            }
-        }
-        .mapControls() {
-            MapUserLocationButton()
-        }
-        .safeAreaInset(edge: .bottom) {
-            HStack {
-                Spacer()
-                Button {
-                    searchMap()
-                } label : {
-                    Image(systemName: "bookmark.fill")
-                        .resizable()
-                        .frame(width: 24, height: 30)
-                }
-                .padding(.trailing, 30)
-            }
-        }
+    @Bindable var model: MapModel
+    /// Which tab this map belongs to. Both tabs render a map and share one camera,
+    /// so only the one on screen is allowed to write camera state back.
+    let tab: MapModel.MapTab
+    @AppStorage(Religion.storageKey) private var religion: Religion = .islam
 
-        .onAppear{
-            manager.requestWhenInUseAuthorization()
+    /// Height of the strip at the bottom of the map that carries the Apple logo
+    /// and "Legal" link. The map is drawn this much taller than its container so
+    /// the strip falls outside the clipped bounds.
+    private let attributionInset: CGFloat = 44
+
+    private var isActive: Bool { model.activeTab == tab }
+
+    var body: some View {
+        GeometryReader { geometry in
+            // `selection` is what makes the pins tappable: MapKit writes the tagged
+            // item back into `model.selectedItem`, and `onChange` opens the sheet.
+            Map(position: $model.cameraPosition, selection: $model.selectedItem) {
+                UserAnnotation()
+
+                if let route = model.route {
+                    MapPolyline(route.polyline)
+                        .stroke(
+                            MusafirTheme.accent,
+                            style: StrokeStyle(lineWidth: 6, lineCap: .round, lineJoin: .round)
+                        )
+                }
+
+                ForEach(model.places, id: \.self) { item in
+                    Marker(
+                        item.name ?? religion.placeholderName,
+                        systemImage: religion.markerSymbol,
+                        coordinate: item.location.coordinate
+                    )
+                    .tint(item == model.selectedItem ? MusafirTheme.accent : .red)
+                    .tag(item)
+                }
+            }
+            .onMapCameraChange(frequency: .onEnd) { context in
+                // The off-screen tab's map also reports camera changes; letting it
+                // write would have the two maps chasing each other's regions.
+                guard isActive else { return }
+                model.isRecentering = false
+                model.visibleRegion = context.region
+            }
+            .frame(
+                width: geometry.size.width,
+                height: geometry.size.height + attributionInset
+            )
+        }
+        .clipped()
+        .ignoresSafeArea()
+        .safeAreaInset(edge: .bottom) {
+            // Recenter button sits directly above the prayer-space cards, and the
+            // whole stack rides above the tab bar via the bottom safe-area inset.
+            VStack(alignment: .trailing, spacing: 12) {
+                if model.canSearchHere && model.route == nil {
+                    searchHereButton
+                        .frame(maxWidth: .infinity)
+                        .transition(.opacity)
+                }
+
+                recenterButton
+                    .padding(.trailing, 20)
+
+                if model.route != nil || model.isRouting || model.routeError != nil {
+                    routeBanner
+                        .padding(.horizontal, MusafirTheme.cardSpacing)
+                        .onTapGesture {
+                            guard model.route != nil else { return }
+                            model.isShowingSteps = true
+                        }
+                } else if !model.cards.isEmpty {
+                    nearbyList
+                } else if model.mode == .query && !model.isSearching {
+                    noResultsLabel
+                        .frame(maxWidth: .infinity)
+                }
+            }
+            .padding(.bottom, 8)
+            .animation(.easeInOut(duration: 0.2), value: model.canSearchHere)
+        }
+        .onAppear {
+            model.activeTab = tab
+            model.requestAuthorization()
+            if model.places.isEmpty {
+                model.searchNearby()
+            }
+        }
+        .onChange(of: model.selectedItem) { _, item in
+            // Fires for pin taps as well as card taps; the card already opened the
+            // sheet, so re-selecting the same item here is a no-op.
+            guard let item else { return }
+            model.select(item, zoom: false)
+        }
+        .onChange(of: religion) {
+            // Stale pins belong to the previous religion; drop them before re-searching.
+            model.reset()
+            model.searchNearby()
         }
     }
-    
-    func searchMap() {
-        let request = MKLocalSearch.Request()
-        request.naturalLanguageQuery = "mosque"
-        
-        let location = manager.location
-        let region = MKCoordinateRegion(
-            center: location!.coordinate,
-            latitudinalMeters: 2000,
-            longitudinalMeters: 2000
-        )
-        
-        request.region = region
-        let search = MKLocalSearch(request: request)
-        search.start { response, error in
-            guard let response else { return }
-            locationMark = response.mapItems
+
+    /// Apple Maps' "Search here": re-runs the current query over the area on screen
+    /// once the user has panned away from where the pins came from.
+    private var searchHereButton: some View {
+        Button {
+            model.searchVisibleRegion()
+        } label: {
+            Label("Search here", systemImage: "magnifyingglass")
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(Color.primary)
+                .padding(.horizontal, 18)
+                .frame(height: 40)
+                .glassEffect(.regular.interactive(), in: .capsule)
         }
+        .buttonStyle(.plain)
+    }
+
+    private var noResultsLabel: some View {
+        Text("No results found")
+            .font(.system(size: 14, weight: .medium))
+            .foregroundStyle(.secondary)
+            .padding(.horizontal, 18)
+            .frame(height: 40)
+            .glassEffect(.regular, in: .capsule)
+    }
+
+    private var recenterButton: some View {
+        Button {
+            model.recenterOnUser()
+        } label: {
+            Image(systemName: model.isRecentering ? "location.fill" : "location")
+                .font(.system(size: 22, weight: .medium))
+                .foregroundStyle(model.isRecentering ? MusafirTheme.accent : Color.primary)
+                .frame(
+                    width: MusafirTheme.recenterButtonSize,
+                    height: MusafirTheme.recenterButtonSize
+                )
+                .glassEffect(.regular.interactive(), in: .circle)
+        }
+        .buttonStyle(.plain)
+    }
+
+    /// Replaces the card list while a route is on the map: ETA, distance, the
+    /// walk/drive toggle and a way out.
+    private var routeBanner: some View {
+        HStack(spacing: 12) {
+            if model.isRouting {
+                ProgressView()
+                Text("Finding route…")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(MusafirTheme.cardLabel)
+            } else if let error = model.routeError {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .foregroundStyle(MusafirTheme.cardLabel)
+                Text(error)
+                    .font(.system(size: 13))
+                    .foregroundStyle(MusafirTheme.cardLabel)
+                    .lineLimit(2)
+            } else {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(model.routeSummary ?? "")
+                        .font(.system(size: 16, weight: .bold))
+                        .foregroundStyle(MusafirTheme.cardLabel)
+
+                    Text(model.routeDestination?.name ?? religion.placeholderName)
+                        .font(.system(size: 13))
+                        .foregroundStyle(MusafirTheme.cardSecondaryLabel)
+                        .lineLimit(1)
+                }
+
+                Spacer(minLength: 0)
+
+                transportButton(.walking, symbol: "figure.walk")
+                transportButton(.automobile, symbol: "car.fill")
+            }
+
+            Spacer(minLength: 0)
+
+            Button {
+                model.clearRoute()
+            } label: {
+                Image(systemName: "xmark")
+                    .font(.system(size: 14, weight: .bold))
+                    .foregroundStyle(MusafirTheme.cardLabel)
+                    .frame(width: 32, height: 32)
+                    .background(MusafirTheme.cardStroke.opacity(0.2), in: .circle)
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(.horizontal, 14)
+        .frame(height: MusafirTheme.cardHeight)
+        .background(
+            MusafirTheme.cardFill,
+            in: RoundedRectangle(cornerRadius: MusafirTheme.cardCornerRadius)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: MusafirTheme.cardCornerRadius)
+                .stroke(MusafirTheme.cardStroke, lineWidth: 1)
+        )
+    }
+
+    private func transportButton(_ type: MKDirectionsTransportType, symbol: String) -> some View {
+        Button {
+            model.setTransportType(type)
+        } label: {
+            Image(systemName: symbol)
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(
+                    model.transportType == type ? MusafirTheme.cardFill : MusafirTheme.cardLabel
+                )
+                .frame(width: 32, height: 32)
+                .background(
+                    model.transportType == type ? MusafirTheme.cardLabel : Color.clear,
+                    in: .circle
+                )
+        }
+        .buttonStyle(.plain)
+    }
+
+    /// Horizontally scrolling cards for the nearest prayer spaces. Tapping a card
+    /// zooms the camera onto that place and opens its detail sheet.
+    private var nearbyList: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: MusafirTheme.cardSpacing) {
+                ForEach(model.cards) { card in
+                    Button {
+                        model.select(card.item)
+                    } label: {
+                        placeCard(for: card)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(.horizontal, MusafirTheme.cardSpacing)
+        }
+        .scrollClipDisabled()
+    }
+
+    private func placeCard(for card: RankedPlace) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: religion.markerSymbol)
+                .font(.system(size: 20))
+                .foregroundStyle(MusafirTheme.cardLabel)
+                .frame(width: 24)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(card.item.name ?? religion.placeholderName)
+                    .font(.system(size: 14, weight: .bold))
+                    .foregroundStyle(MusafirTheme.cardLabel)
+                    .lineLimit(1)
+
+                Text(card.distanceText ?? model.addressText(for: card.item))
+                    .font(.system(size: 13))
+                    .foregroundStyle(MusafirTheme.cardSecondaryLabel)
+                    .lineLimit(1)
+            }
+
+            Spacer(minLength: 0)
+        }
+        .padding(.leading, 14)
+        .padding(.trailing, 12)
+        .frame(
+            width: MusafirTheme.cardWidth,
+            height: MusafirTheme.cardHeight,
+            alignment: .leading
+        )
+        .background(
+            MusafirTheme.cardFill,
+            in: RoundedRectangle(cornerRadius: MusafirTheme.cardCornerRadius)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: MusafirTheme.cardCornerRadius)
+                .stroke(
+                    MusafirTheme.cardStroke,
+                    lineWidth: card.item == model.selectedItem ? 2 : 1
+                )
+        )
     }
 }
 
