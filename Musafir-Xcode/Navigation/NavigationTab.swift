@@ -75,7 +75,8 @@ struct NavigationTab: View {
             if let route = mapModel.route {
                 RouteStepsSheet(
                     route: route,
-                    destinationName: mapModel.routeDestination?.name ?? religion.placeholderName
+                    destinationName: mapModel.routeDestination?.name ?? religion.placeholderName,
+                    currentStepIndex: mapModel.progress?.stepIndex
                 )
             }
         }

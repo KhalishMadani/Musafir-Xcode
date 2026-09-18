@@ -29,8 +29,8 @@ struct MapView: View {
             Map(position: $model.cameraPosition, selection: $model.selectedItem) {
                 UserAnnotation()
 
-                if let route = model.route {
-                    MapPolyline(route.polyline)
+                if let overlay = model.routeOverlay {
+                    MapPolyline(overlay)
                         .stroke(
                             MusafirTheme.accent,
                             style: StrokeStyle(lineWidth: 6, lineCap: .round, lineJoin: .round)
@@ -50,7 +50,7 @@ struct MapView: View {
             .onMapCameraChange(frequency: .onEnd) { context in
                 // The off-screen tab's map also reports camera changes; letting it
                 // write would have the two maps chasing each other's regions.
-                guard isActive else { return }
+                guard isActive, !model.isNavigating else { return }
                 model.isRecentering = false
                 model.visibleRegion = context.region
             }
@@ -71,16 +71,31 @@ struct MapView: View {
                         .transition(.opacity)
                 }
 
-                recenterButton
-                    .padding(.trailing, 20)
+                if !model.isNavigating {
+                    recenterButton
+                        .padding(.trailing, 20)
+                }
 
-                if model.route != nil || model.isRouting || model.routeError != nil {
-                    routeBanner
+                if model.isNavigating {
+                    navigationBanner
                         .padding(.horizontal, MusafirTheme.cardSpacing)
-                        .onTapGesture {
-                            guard model.route != nil else { return }
-                            model.isShowingSteps = true
+                        .onTapGesture { model.isShowingSteps = true }
+                } else if model.hasArrived {
+                    arrivalBanner
+                        .padding(.horizontal, MusafirTheme.cardSpacing)
+                } else if model.route != nil || model.isRouting || model.routeError != nil {
+                    VStack(spacing: 10) {
+                        if model.route != nil {
+                            startButton
                         }
+
+                        routeBanner
+                            .onTapGesture {
+                                guard model.route != nil else { return }
+                                model.isShowingSteps = true
+                            }
+                    }
+                    .padding(.horizontal, MusafirTheme.cardSpacing)
                 } else if !model.cards.isEmpty {
                     nearbyList
                 } else if model.mode == .query && !model.isSearching {
@@ -90,6 +105,7 @@ struct MapView: View {
             }
             .padding(.bottom, 8)
             .animation(.easeInOut(duration: 0.2), value: model.canSearchHere)
+            .animation(.easeInOut(duration: 0.25), value: model.isNavigating)
         }
         .onAppear {
             model.activeTab = tab
@@ -227,6 +243,121 @@ struct MapView: View {
                 )
         }
         .buttonStyle(.plain)
+    }
+
+    /// Begins following the route. Kept separate from drawing it so the user can
+    /// look the route over first.
+    private var startButton: some View {
+        Button {
+            model.startNavigation()
+        } label: {
+            Label("Go", systemImage: "location.north.fill")
+                .font(.system(size: 17, weight: .bold))
+                .foregroundStyle(.white)
+                .frame(maxWidth: .infinity)
+                .frame(height: 50)
+                .background(MusafirTheme.accent, in: .capsule)
+        }
+        .buttonStyle(.plain)
+    }
+
+    /// Live guidance: the next maneuver, how far to it, and what's left overall.
+    /// Tapping opens the full written directions.
+    private var navigationBanner: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(alignment: .top, spacing: 12) {
+                Image(systemName: "arrow.triangle.turn.up.right.circle.fill")
+                    .font(.system(size: 26))
+                    .foregroundStyle(MusafirTheme.cardLabel)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(model.currentInstruction ?? "Continue")
+                        .font(.system(size: 16, weight: .bold))
+                        .foregroundStyle(MusafirTheme.cardLabel)
+                        .lineLimit(2)
+                        .multilineTextAlignment(.leading)
+                        .fixedSize(horizontal: false, vertical: true)
+
+                    if let next = model.distanceToNextTurn {
+                        Text(next)
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundStyle(MusafirTheme.cardSecondaryLabel)
+                    }
+                }
+
+                Spacer(minLength: 0)
+
+                Button {
+                    model.stopNavigation()
+                } label: {
+                    Text("End")
+                        .font(.system(size: 14, weight: .bold))
+                        .foregroundStyle(MusafirTheme.cardLabel)
+                        .padding(.horizontal, 14)
+                        .frame(height: 32)
+                        .background(MusafirTheme.cardStroke.opacity(0.2), in: .capsule)
+                }
+                .buttonStyle(.plain)
+            }
+
+            Text(model.remainingSummary ?? "")
+                .font(.system(size: 13))
+                .foregroundStyle(MusafirTheme.cardSecondaryLabel)
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            MusafirTheme.cardFill,
+            in: RoundedRectangle(cornerRadius: MusafirTheme.cardCornerRadius)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: MusafirTheme.cardCornerRadius)
+                .stroke(MusafirTheme.cardStroke, lineWidth: 1)
+        )
+    }
+
+    /// Shown once the destination is reached, so the route ends with a word rather
+    /// than the banner simply disappearing.
+    private var arrivalBanner: some View {
+        HStack(spacing: 12) {
+            Image(systemName: "checkmark.circle.fill")
+                .font(.system(size: 22))
+                .foregroundStyle(MusafirTheme.cardLabel)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Arrived")
+                    .font(.system(size: 16, weight: .bold))
+                    .foregroundStyle(MusafirTheme.cardLabel)
+
+                Text(model.routeDestination?.name ?? religion.placeholderName)
+                    .font(.system(size: 13))
+                    .foregroundStyle(MusafirTheme.cardSecondaryLabel)
+                    .lineLimit(1)
+            }
+
+            Spacer(minLength: 0)
+
+            Button {
+                model.clearRoute()
+            } label: {
+                Image(systemName: "xmark")
+                    .font(.system(size: 14, weight: .bold))
+                    .foregroundStyle(MusafirTheme.cardLabel)
+                    .frame(width: 32, height: 32)
+                    .background(MusafirTheme.cardStroke.opacity(0.2), in: .circle)
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(.horizontal, 14)
+        .frame(height: MusafirTheme.cardHeight)
+        .background(
+            MusafirTheme.cardFill,
+            in: RoundedRectangle(cornerRadius: MusafirTheme.cardCornerRadius)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: MusafirTheme.cardCornerRadius)
+                .stroke(MusafirTheme.cardStroke, lineWidth: 1)
+        )
     }
 
     /// Horizontally scrolling cards for the nearest prayer spaces. Tapping a card

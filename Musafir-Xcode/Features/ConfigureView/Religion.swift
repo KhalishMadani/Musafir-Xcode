@@ -12,8 +12,9 @@ enum Religion: String, CaseIterable, Identifiable {
     case islam = "Islam"
     case kristen = "Kristen"
     case katolik = "Katolik"
-    case hindu = "Hindu"
+    // Same order as the onboarding mockup.
     case budha = "Budha"
+    case hindu = "Hindu"
 
     var id: String { rawValue }
 
@@ -28,6 +29,17 @@ enum Religion: String, CaseIterable, Identifiable {
         case .katolik: "catholic church"
         case .hindu: "hindu temple"
         case .budha: "buddhist temple"
+        }
+    }
+
+    /// English label shown in onboarding.
+    var displayName: String {
+        switch self {
+        case .islam: "Muslim"
+        case .kristen: "Christian"
+        case .katolik: "Catholic"
+        case .hindu: "Hindu"
+        case .budha: "Buddhist"
         }
     }
 

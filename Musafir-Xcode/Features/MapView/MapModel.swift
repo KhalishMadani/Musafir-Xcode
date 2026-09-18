@@ -76,6 +76,43 @@ final class MapModel: NSObject, CLLocationManagerDelegate {
     var routeError: String?
     var transportType: MKDirectionsTransportType = .walking
 
+    // MARK: - Navigation
+
+    /// True while the map is following the user along the route. The route can be
+    /// on screen without this being set: drawing the line and walking it are two
+    /// separate acts, the way Apple Maps separates the preview from "Go".
+    private(set) var isNavigating = false
+    /// Where the user is along the route, recomputed on every fix.
+    private(set) var progress: RouteProgress?
+    /// Set once the destination is reached, so the banner can say so instead of
+    /// silently vanishing.
+    private(set) var hasArrived = false
+    /// The route's geometry, chewed once per route rather than per fix.
+    private var tracker: RouteTracker?
+    /// Consecutive fixes found too far from the line. A single bad fix in a street
+    /// canyon shouldn't trigger a reroute.
+    private var offRouteFixes = 0
+    /// When the last automatic reroute fired, to stop a bad GPS patch from
+    /// requesting directions over and over.
+    private var lastRerouteAt: Date?
+    /// Compass heading, used to point the camera while the user is standing still
+    /// and `course` has nothing to report.
+    private var compassHeading: CLLocationDirection?
+    /// Heading the camera was last pointed at, so small compass jitter doesn't
+    /// re-animate the camera many times a second.
+    private var cameraHeading: CLLocationDirection?
+
+    /// Metres from the route line before the user counts as off it.
+    private let offRouteThreshold: CLLocationDistance = 50
+    /// How many consecutive off-route fixes force a reroute.
+    private let offRouteFixesBeforeReroute = 3
+    /// Minimum gap between automatic reroutes.
+    private let rerouteCooldown: TimeInterval = 10
+    /// Metres from the destination that count as having arrived.
+    private let arrivalRadius: CLLocationDistance = 30
+    /// Below this speed the course reading is noise, so the compass drives the camera.
+    private let stationarySpeed: CLLocationSpeed = 0.5
+
     /// Region the camera is showing right now, refreshed when a pan or zoom ends.
     var visibleRegion: MKCoordinateRegion?
     /// Region the pins on screen were searched in. Comparing it against
@@ -150,6 +187,15 @@ final class MapModel: NSObject, CLLocationManagerDelegate {
     func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
         guard let location = locations.last else { return }
         userLocation = location
+
+        // While navigating the cards are off screen and the nearby results are
+        // frozen; the fix exists to move the camera and advance the route.
+        if isNavigating {
+            updateProgress(for: location)
+            followUser()
+            return
+        }
+
         rebuildCards()
 
         // First fix: frame the user's surroundings with a concrete region. Leaving the
@@ -176,6 +222,21 @@ final class MapModel: NSObject, CLLocationManagerDelegate {
 
     /// How far the user must move before the nearby results are searched again.
     private let refreshDistance: CLLocationDistance = 2_000
+
+    func locationManager(_ manager: CLLocationManager, didUpdateHeading newHeading: CLHeading) {
+        guard newHeading.headingAccuracy >= 0 else { return }
+        compassHeading = newHeading.trueHeading
+
+        // The compass only owns the camera when the user isn't moving; otherwise
+        // `course` is steadier. Turning on the spot still turns the map.
+        guard isNavigating,
+              let userLocation,
+              userLocation.speed <= stationarySpeed else { return }
+
+        if let cameraHeading,
+           abs(newHeading.trueHeading - cameraHeading) < 8 { return }
+        followUser()
+    }
 
     // MARK: - Distance
 
@@ -355,6 +416,8 @@ final class MapModel: NSObject, CLLocationManagerDelegate {
     /// Draws the route inside the app instead of launching Apple Maps. MapKit has no
     /// public turn-by-turn guidance, so this is the line, the ETA and the written steps.
     func startDirections(to item: MKMapItem) {
+        stopNavigation()
+        hasArrived = false
         routeDestination = item
         requestRoute()
     }
@@ -367,10 +430,13 @@ final class MapModel: NSObject, CLLocationManagerDelegate {
     }
 
     func clearRoute() {
+        stopNavigation()
         currentDirections?.cancel()
         currentDirections = nil
         route = nil
         routeDestination = nil
+        tracker = nil
+        hasArrived = false
         isRouting = false
         isShowingSteps = false
         routeError = nil
@@ -401,10 +467,189 @@ final class MapModel: NSObject, CLLocationManagerDelegate {
             }
 
             self.route = route
+            self.tracker = RouteTracker(route: route)
+
+            // A reroute must not throw the camera back to a whole-route overview;
+            // the user is mid-journey and wants to keep looking ahead.
+            guard !self.isNavigating else {
+                if let userLocation = self.userLocation {
+                    self.updateProgress(for: userLocation)
+                }
+                return
+            }
+
             withAnimation(.easeInOut(duration: 0.4)) {
                 self.cameraPosition = .rect(self.paddedRect(for: route))
             }
         }
+    }
+
+    // MARK: - Navigation
+
+    /// Starts following the route: tight location updates, compass on, and the
+    /// camera locked ahead of the user.
+    func startNavigation() {
+        guard route != nil, !isNavigating else { return }
+        isNavigating = true
+        hasArrived = false
+        offRouteFixes = 0
+        lastRerouteAt = nil
+        selectedItem = nil
+        isShowingDetail = false
+
+        // Coarse fixes every 50 m are enough to rank cards but far too blunt to
+        // walk a route with.
+        manager.desiredAccuracy = kCLLocationAccuracyBestForNavigation
+        manager.distanceFilter = kCLDistanceFilterNone
+        manager.pausesLocationUpdatesAutomatically = false
+        manager.startUpdatingHeading()
+
+        if let userLocation {
+            updateProgress(for: userLocation)
+        }
+        followUser()
+    }
+
+    /// Stops following and hands the camera back to the user. The route itself is
+    /// left on the map; `clearRoute()` is what removes it.
+    func stopNavigation() {
+        guard isNavigating else { return }
+        isNavigating = false
+        progress = nil
+        offRouteFixes = 0
+        compassHeading = nil
+        cameraHeading = nil
+
+        manager.stopUpdatingHeading()
+        manager.desiredAccuracy = kCLLocationAccuracyHundredMeters
+        manager.distanceFilter = 50
+        manager.pausesLocationUpdatesAutomatically = true
+    }
+
+    /// Advances the route for a new fix: arrival first, then off-route detection.
+    private func updateProgress(for location: CLLocation) {
+        guard let tracker, let next = tracker.progress(for: location) else { return }
+        progress = next
+
+        if let destination = routeDestination {
+            let coordinate = destination.location.coordinate
+            let straightLine = location.distance(
+                from: CLLocation(latitude: coordinate.latitude, longitude: coordinate.longitude)
+            )
+            if straightLine <= arrivalRadius || next.remainingDistance <= arrivalRadius {
+                arrive()
+                return
+            }
+        }
+
+        guard next.offRouteDistance > offRouteThreshold else {
+            offRouteFixes = 0
+            return
+        }
+
+        offRouteFixes += 1
+        guard offRouteFixes >= offRouteFixesBeforeReroute else { return }
+
+        let now = Date()
+        if let lastRerouteAt, now.timeIntervalSince(lastRerouteAt) < rerouteCooldown { return }
+        lastRerouteAt = now
+        offRouteFixes = 0
+        requestRoute()
+    }
+
+    private func arrive() {
+        hasArrived = true
+        stopNavigation()
+        progress = nil
+    }
+
+    /// Points the camera down the user's direction of travel. Course is used while
+    /// moving and the compass while standing still, because a stationary fix
+    /// reports no course at all.
+    private func followUser() {
+        guard let userLocation else { return }
+
+        let course = userLocation.course
+        let bearing: CLLocationDirection
+        if userLocation.speed > stationarySpeed,
+           userLocation.courseAccuracy >= 0,
+           course >= 0 {
+            bearing = course
+        } else if let compassHeading {
+            bearing = compassHeading
+        } else {
+            bearing = cameraHeading ?? 0
+        }
+
+        cameraHeading = bearing
+
+        withAnimation(.linear(duration: 1)) {
+            cameraPosition = .camera(
+                MapCamera(
+                    centerCoordinate: userLocation.coordinate,
+                    distance: 500,
+                    heading: bearing,
+                    pitch: 55
+                )
+            )
+        }
+    }
+
+    // MARK: - Route text
+
+    /// The maneuver the user is heading toward. MapKit's first step is an empty
+    /// "start" placeholder, so empty instructions are skipped forward.
+    var currentInstruction: String? {
+        guard let route, let progress else { return nil }
+        let steps = route.steps
+        guard progress.stepIndex < steps.count else { return nil }
+        for index in progress.stepIndex..<steps.count where !steps[index].instructions.isEmpty {
+            return steps[index].instructions
+        }
+        return nil
+    }
+
+    /// Distance to the next turn, e.g. "in 120 m".
+    var distanceToNextTurn: String? {
+        guard let progress else { return nil }
+        return MapModel.distanceFormatter.string(fromDistance: progress.distanceToStepEnd)
+    }
+
+    /// Live "8 min · 650 m" while navigating, falling back to the route's original
+    /// estimate before the first fix lands.
+    var remainingSummary: String? {
+        guard let progress else { return routeSummary }
+        return MapModel.summary(
+            time: progress.remainingTime,
+            distance: progress.remainingDistance
+        )
+    }
+
+    /// The line drawn on the map: the untravelled part while navigating, the whole
+    /// route otherwise.
+    var routeOverlay: MKPolyline? {
+        if isNavigating, let remaining = progress?.remainingPolyline {
+            return remaining
+        }
+        return route?.polyline
+    }
+
+    private static let distanceFormatter: MKDistanceFormatter = {
+        let formatter = MKDistanceFormatter()
+        formatter.unitStyle = .abbreviated
+        return formatter
+    }()
+
+    private static let timeFormatter: DateComponentsFormatter = {
+        let formatter = DateComponentsFormatter()
+        formatter.allowedUnits = [.hour, .minute]
+        formatter.unitsStyle = .abbreviated
+        return formatter
+    }()
+
+    private static func summary(time: TimeInterval, distance: CLLocationDistance) -> String {
+        let eta = timeFormatter.string(from: max(time, 60)) ?? ""
+        return "\(eta) · \(distanceFormatter.string(fromDistance: distance))"
     }
 
     /// The route's bounding box with room left around it for the cards and buttons.
@@ -415,14 +660,6 @@ final class MapModel: NSObject, CLLocationManagerDelegate {
 
     var routeSummary: String? {
         guard let route else { return nil }
-        let distance = MKDistanceFormatter()
-        distance.unitStyle = .abbreviated
-
-        let time = DateComponentsFormatter()
-        time.allowedUnits = [.hour, .minute]
-        time.unitsStyle = .abbreviated
-        let eta = time.string(from: route.expectedTravelTime) ?? ""
-
-        return "\(eta) · \(distance.string(fromDistance: route.distance))"
+        return MapModel.summary(time: route.expectedTravelTime, distance: route.distance)
     }
 }
